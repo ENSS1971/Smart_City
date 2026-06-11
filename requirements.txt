@@ -6,3 +6,4 @@ requests
 tensorflow-cpu 
 opencv-python-headless 
 gdown 
+python-multipart 
