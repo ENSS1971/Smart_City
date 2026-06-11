@@ -84,4 +84,8 @@ async def registrar_ocorrencia(
             if ip_real not in ["127.0.0.1", "localhost", "0.0.0.0", "10.16.25.137"]:
                 resposta_gps = requests.get(f"http://ip-api.com/json/{ip_real}").json()
                 if resposta_gps.get("status") == "success":
-                    latitude = resposta_gps
+                    latitude = resposta_gps.get("lat", 0.0)
+                    longitude = resposta_gps.get("lon", 0.0)
+                    print(f"🛰️ Geolocalização por IP aplicada! Lat: {latitude}, Lon: {longitude}")
+        except Exception as erro_gps:
+            print(f"⚠️ Falha na geolocalização por IP: {erro_gps}")
