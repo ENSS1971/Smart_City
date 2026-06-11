@@ -1,0 +1,4 @@
+.env
+imagens_ocorrencias/
+__pycache__/
+modelo_defesa_maxima_cifar10.keras
