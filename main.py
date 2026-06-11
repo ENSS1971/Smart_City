@@ -17,7 +17,7 @@ load_dotenv()
 NOME_MODELO = "modelo_defesa_maxima_cifar10.keras"
 
 # ⚠️ SUBSTITUA O LINK ABAIXO PELO LINK DO SEU ARQUIVO DO GOOGLE DRIVE
-LINK_GOOGLE_DRIVE = "https://drive.google.com/drive/folders/1D-u36jz9QKuQjPza8pPKjDSyH4U8hQb8?usp=drive_link"
+LINK_GOOGLE_DRIVE = "https://drive.google.com/file/d/1Bnd90SLLO5DOSF6DDwyheAvVIlevR5Qm/view?usp=drive_link"
 
 # 3. MECANISMO AUTO-DOWNLOAD (Garante o deploy leve na nuvem)
 if not os.path.exists(NOME_MODELO):
