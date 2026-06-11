@@ -1,8 +1,8 @@
-fastapi
-uvicorn
-pymongo[srv]
-python-dotenv
-requests
-tensorflow-cpu
-opencv-python-headless
-gdown
+fastapi 
+uvicorn 
+pymongo[srv] 
+python-dotenv 
+requests 
+tensorflow-cpu 
+opencv-python-headless 
+gdown 
