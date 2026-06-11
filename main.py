@@ -1,25 +1,33 @@
 import os
-from datetime import datetime
-from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, Form
-import tensorflow as tf
-from tensorflow.keras.applications.resnet50 import preprocess_input
-import numpy as np
 import cv2
-from pymongo import MongoClient
+import numpy as np
+import tensorflow as tf
+import gdown
 import requests
-import gdown  # Biblioteca especialista em downloads do Google Drive
+from datetime import datetime
+from fastapi import FastAPI, Request, UploadFile, File, Form, RuntimeError
+from pymongo import MongoClient
 
-# 1. CARREGA AS VARIÁVEIS DE AMBIENTE SECRETAS (.env)
-load_dotenv()
-
-# 2. CONFIGURAÇÃO DO ARQUIVO DO MODELO DE IA
+# 1. CONFIGURAÇÕES INICIAIS E CONSTANTES
 NOME_MODELO = "modelo_defesa_maxima_cifar10.keras"
+# Link direto do arquivo compartilhado (Acesso Geral: Qualquer pessoa com o link)
+LINK_GOOGLE_DRIVE = "https://drive.google.com/uc?id=1Bnd90SLLO5DOSF6DDwyheAvVIlevR5Qm"
 
-# ⚠️ SUBSTITUA O LINK ABAIXO PELO LINK DO SEU ARQUIVO DO GOOGLE DRIVE
-LINK_GOOGLE_DRIVE = "https://drive.google.com/file/d/1Bnd90SLLO5DOSF6DDwyheAvVIlevR5Qm/view?usp=drive_link"
+# Classes do CIFAR-10 adaptadas para o contexto da Smart City
+CLASSES_IA = {
+    0: "Aviao/Asa-Delta",
+    1: "Automovel/Caminhao",  # Mapeado no seu teste com 100%
+    2: "Passaro/Fauna",
+    3: "Gato/Animal-Solto",
+    4: "Veado/Animal-Silvestre",
+    5: "Cao/Animal-Abandonado",
+    6: "Sapo/Anfibio-Praga",
+    7: "Cavalo/Tracao-Animal",
+    8: "Navio/Embarcacao",
+    9: "Caminhao/Carga-Irregular"
+}
 
-# 3. MECANISMO AUTO-DOWNLOAD (Garante o deploy leve na nuvem)
+# 2. DOWNLOAD E CARREGAMENTO SEGURO DO MODELO DE IA
 if not os.path.exists(NOME_MODELO):
     print(f"📥 O cérebro da IA ({NOME_MODELO}) não foi encontrado localmente.")
     print("Iniciando download seguro do modelo direto do Google Drive...")
@@ -29,116 +37,51 @@ if not os.path.exists(NOME_MODELO):
     except Exception as e:
         raise RuntimeError(f"Erro crítico ao buscar o modelo no Google Drive: {e}")
 
-# 4. INICIALIZAÇÃO DA API E CARREGAMENTO DO MODELO
-app = FastAPI(
-    title="UrbeIA - Sistema Inteligente de Monitoramento Urbano",
-    description="API robusta de IA integrada ao MongoDB Atlas com deploy automatizado.",
-    version="1.2.0"
-)
-
+# Carrega o modelo na memória RAM estável do Hugging Face
 modelo_smart_city = tf.keras.models.load_model(NOME_MODELO)
 
-# Pasta física local para salvar as evidências visuais
-PASTA_IMAGENS = "imagens_ocorrencias"
-if not os.path.exists(PASTA_IMAGENS):
-    os.makedirs(PASTA_IMAGENS)
+# 3. CONEXÃO COM O BANCO DE DADOS NOSQL (MONGODB ATLAS)
+MONGO_URI = os.getenv("MONGO_URI")
+if not MONGO_URI:
+    raise RuntimeError("Variável de ambiente MONGO_URI não foi configurada no Hugging Face!")
 
-# 5. CONEXÃO SEGURA COM O MONGODB ATLAS
-string_conexao_secreta = os.getenv("MONGO_URI")
-if not string_conexao_secreta:
-    raise ValueError("ERRO CRÍTICO: A variável MONGO_URI não foi encontrada no ambiente!")
+client = MongoClient(MONGO_URI)
+db = client["smart_city_database"]       # Seu Banco de Dados
+colecao = db["chamados_prefeitura"]       # Sua Coleção
 
-cliente = MongoClient(string_conexao_secreta)
-db = cliente["urbeia_db"]
-colecao = db["chamados"]
+# 4. INICIALIZAÇÃO DA API FASTAPI
+app = FastAPI(
+    title="UrbeIA - Smart City API",
+    description="API de monitoramento urbano inteligente usando Visão Computacional e Inteligência Artificial.",
+    version="1.0.0"
+)
 
-# 6. LOGÍSTICA URBANA (Roteamento de Secretarias)
-def rotear_classe_cifar(indice_classe):
-    if indice_classe == 2: 
-        return "Passaro (Fauna Silvestre)", "Policia Militar Ambiental - Comando de Combate ao Trafico", "CRITICO - Investigacao de Cativeiro"
-    elif indice_classe in [1, 9]: 
-        return "Automovel/Caminhao", "Secretaria de Mobilidade Urbana e Transito", "Aberto - Aguardando Fiscalizacao"
-    elif indice_classe in [3, 5]: 
-        return "Gato/Cachorro", "Secretaria de Bem-Estar Animal (Zoonoses)", "Aberto - Triagem Veterinaria"
-    elif indice_classe in [4, 7]: 
-        return "Cervo/Cavalo", "Guarda Ambiental / Defesa Civil", "URGENTE - Animal de Grande Porte na Via"
-    return "Nao Identificado", "Secretaria de Servicos Urbanos", "Aberto - Triagem Geral"
-
-# 7. ENDPOINT PRINCIPAL: REGISTRO DE OCORRÊNCIAS IMEDIATO
+# 5. ENDPOINT PRINCIPAL: REGISTRO DE OCORRÊNCIAS
 @app.post("/registrar_ocorrencia/", summary="Registra ocorrência com GPS manual ou automático por IP")
 async def registrar_ocorrencia(
-    foto: UploadFile = File(...),
-    latitude: float | None = Form(None, description="Opcional. Se omitido, usará o IP do computador"),
-    longitude: float | None = Form(None, description="Opcional. Se omitido, usará o IP do computador")
+    request: Request,
+    latitude: float = Form(0.0),
+    longitude: float = Form(0.0),
+    foto: UploadFile = File(...)
 ):
-    # SE O GPS VIER VAZIO, CAPTURA AUTOMATICAMENTE O IP DO COMPUTADOR
-    if latitude is None or longitude is None:
-        print("📍 Coordenadas não enviadas. Ativando rastreamento automático por IP...")
+    # 📌 PASSO 1: SISTEMA INTELIGENTE DE GEOLOCALIZAÇÃO POR IP (CORRIGIDO PARA HUGGING FACE)
+    if latitude == 0.0 and longitude == 0.0:
+        print("🔍 Coordenadas zeradas. Tentando detectar localização por IP do usuário...")
+        
+        # Lê o cabeçalho HTTP injetado pelo roteador do Hugging Face
+        x_forwarded_for = request.headers.get("x-forwarded-for")
+        
+        if x_forwarded_for:
+            # Captura o primeiro IP da lista (IP público real do computador/celular do cidadão)
+            ip_real = x_forwarded_for.split(",")[0].strip()
+            print(f"🌐 IP real detectado atrás do Proxy: {ip_real}")
+        else:
+            ip_real = request.client.host
+            print(f"💻 Teste local ou direto detectado. IP: {ip_real}")
+        
+        # Consulta uma API externa de geolocalização passando o IP real coletado
         try:
-            resposta_geo = requests.get("https://ipapi.co/json/", timeout=5).json()
-            latitude = float(resposta_geo.get("latitude", 0.0))
-            longitude = float(resposta_geo.get("longitude", 0.0))
-            print(f"🌍 Localização aproximada encontrada: {resposta_geo.get('city')} - {resposta_geo.get('region')}")
-        except Exception as e:
-            print(f"⚠️ Falha ao rastrear IP, aplicando coordenadas padrão (0,0): {e}")
-            latitude = 0.0
-            longitude = 0.0
-
-    # Processamento da imagem recebida
-    conteudo_foto = await foto.read()
-    nparr = np.frombuffer(conteudo_foto, np.uint8)
-    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    
-    # Prepara a imagem para o padrão exigido pela rede neural (224x224)
-    img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    img_redimensionada = tf.image.resize(img_rgb, (224, 224))
-    img_batch = tf.expand_dims(img_redimensionada, axis=0)
-    img_pronta = preprocess_input(img_batch)
-    
-    # Executa a inteligência artificial
-    predicoes = modelo_smart_city.predict(img_pronta, verbose=0)
-    indice_classe = np.argmax(predicoes[0])
-    confianca = float(predicoes[0][indice_classe] * 100)
-    
-    # Aplica as regras de negócio da cidade
-    classe_str, secretaria, status_inicial = rotear_classe_cifar(indice_classe)
-    protocolo_id = datetime.now().strftime("%Y%m%d%H%M%S")
-    horario_atual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Salva a imagem fisicamente na pasta de auditoria
-    caminho_foto = os.path.join(PASTA_IMAGENS, f"{protocolo_id}.jpg")
-    cv2.imwrite(caminho_foto, frame)
-    
-    # Estrutura o documento NoSQL para persistência eterna
-    documento_chamado = {
-        "protocolo": protocolo_id,
-        "data_hora": str(horario_atual),
-        "classe_detectada": classe_str,
-        "confianca_ia": round(confianca, 2),
-        "secretaria_destino": secretaria,
-        "status": status_inicial,
-        "geolocalizacao": {
-            "latitude": latitude,
-            "longitude": longitude
-        },
-        "caminho_imagem": caminho_foto
-    }
-    
-    # Envia para a nuvem do MongoDB
-    resultado_banco = colecao.insert_one(documento_chamado)
-    
-    return {
-        "status_requisicao": "Sucesso",
-        "id_banco": str(resultado_banco.inserted_id),
-        "protocolo": protocolo_id,
-        "ia_insights": {
-            "alvo": classe_str,
-            "certeza": f"{confianca:.2f}%"
-        },
-        "encaminhado_para": secretaria,
-        "geolocalizacao_gravada": {
-            "latitude": latitude,
-            "longitude": longitude
-        },
-        "status_chamado": status_inicial
-    }
+            if ip_real not in ["127.0.0.1", "localhost", "0.0.0.0", "10.16.25.137"]:
+                resposta_gps = requests.get(f"http://ip-api.com/json/{ip_real}").json()
+                if resposta_gps.get("status") == "success":
+                    latitude = resposta_gps
